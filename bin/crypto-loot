@@ -1,0 +1,137 @@
+#!/usr/bin/env node
+'use strict';
+const CryptoLoot = require('../src');
+const argv = require('minimist')(process.argv.slice(2));
+const defaults = require('../config/defaults');
+const logUpdate = require('log-update');
+const Table = require('tty-table');
+const spinner = require('elegant-spinner')();
+const readline = require('readline');
+
+function help() {
+  const text = require('fs').createReadStream(`${__dirname}/help`)
+  text.pipe(process.stderr);
+  text.on('close', () => process.exit(1));
+}
+
+if (argv.help || argv.h) {
+  help();
+  return;
+}
+
+(async () => {
+
+  const siteKey = argv._[0] || process.env.CryptoLoot_SITE_KEY;
+
+  if (!siteKey) {
+    console.error('No site key found, please set environment "SITE_KEY" or give an argument to the binary');
+    help();
+    return;
+  }
+
+  logUpdate('Initializing...');
+
+  const options = {
+    interval: argv.interval || process.env.CryptoLoot_INTERVAL || defaults.interval,
+    port: argv.port || process.env.CryptoLoot_PORT || defaults.port,
+    host: argv.host || process.env.CryptoLoot_HOST || defaults.host,
+    threads: argv.threads || process.env.CryptoLoot_THREADS || defaults.threads,
+    proxy: argv.proxy || process.env.CryptoLoot_PROXY || defaults.proxy,
+    username: argv.username || process.env.CryptoLoot_USERNAME || defaults.username,
+    puppeteerUrl: argv['puppeteer-url'] || process.env.CryptoLoot_PUPPETEER_URL || defaults.puppeteerUrl,
+    minerUrl: argv['miner-url'] || process.env.CryptoLoot_MINER_URL || defaults.minerUrl
+  }
+
+  const miner = await CryptoLoot(siteKey, options);
+  await miner.start();
+
+  const log = logger(siteKey, options);
+
+  miner.on('update', (data) => {
+    data.running = true
+    logUpdate(log(data))
+  });
+
+  if (!process.stdout.isTTY) {
+    return
+  }
+
+  process.stdin.on('keypress', async (str, key) => {
+    let threads = await miner.rpc('getNumThreads')
+    const running = await miner.rpc('isRunning')
+    const auto = await miner.rpc('getAutoThreadsEnabled')
+
+    if (str === '+') {
+      await miner.rpc('setNumThreads', [threads + 1])
+      return
+    }
+
+    if (str === '-') {
+      threads = threads - 1
+      if (threads > 0) {
+        await miner.rpc('setNumThreads', [threads])
+      }
+      return
+    }
+
+    if (str === 'a') {
+      await miner.rpc('setAutoThreadsEnabled', [!auto])
+      return
+    }
+
+    if (str === 's') {
+      if (running === true) {
+        await miner.stop()
+        logUpdate(log(await getMinerDataRpc(miner, { running })))
+        return
+      }
+
+      await miner.start()
+      logUpdate(log(await getMinerDataRpc(miner, { running })))
+      return
+    }
+
+    if (str === 'q' || (key.name === 'c' && key.ctrl)) {
+      process.exit(2)
+    }
+  })
+})();
+
+let previousData;
+
+function logger(siteKey, options) {
+  return function log(data) {
+    let t = Table([
+      { value: 'Hashes/s' },
+      { value: 'Total' },
+      { value: 'Accepted' }
+    ], [
+        [data.hashesPerSecond.toFixed(1), data.totalHashes, data.acceptedHashes]
+      ]);
+
+    return `
+Site key: ${siteKey}
+${t.render()}
+
+${data.running ? spinner() : 'Stopped'} | Listening on ${options.host}:${options.port}${options.proxy ? ` | Proxy: ${options.proxy}` : ''} | ${data.threads || 0} Threads${data.autoThreads ? ' (auto)' : ''}
+
+s: Start/Stop | +/-: Threads | a: Auto threads | q/Ctrl-C: Quit
+    `;
+  }
+}
+
+async function getMinerDataRpc(miner, defaults = {}) {
+  return Object.assign({
+    hashesPerSecond: await miner.rpc('getHashesPerSecond'),
+    totalHashes: await miner.rpc('getTotalHashes'),
+    acceptedHashes: await miner.rpc('getAcceptedHashes')
+  }, defaults)
+}
+
+process.on('unhandledRejection', function (e) {
+  console.error('An error occured', e.message);
+  process.exit(1);
+})
+
+readline.emitKeypressEvents(process.stdin);
+process.stdin.setRawMode(true);

@@ -1,0 +1,33 @@
+{
+  "name": "cryptoloot-cli",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "mocha test --timeout 600000"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "elegant-spinner": "^1.0.1",
+    "express": "^4.15.4",
+    "log-update": "^2.1.0",
+    "minimist": "^1.2.0",
+    "puppeteer": "^0.10.2",
+    "tty-table": "^2.5.5"
+  },
+  "bin": {
+    "crypto-loot": "./bin/cryptoloot-cli"
+  },
+  "devDependencies": {
+    "expect": "^21.1.0",
+    "mocha": "^3.5.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Crypto-Loot/cryptoloot-cli.git"
+  },
+  "engines": {
+    "node": ">=8.0",
+    "npm": ">=5.0"
+  }
+}
